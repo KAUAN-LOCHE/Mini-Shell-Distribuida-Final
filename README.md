@@ -167,15 +167,3 @@ print(Client.send_to("127.0.0.1", 5001, msg).payload)
 ```
 
 ---
-
-## 5. Resumo do que foi corrigido/implementado
-
-- Corrigidos erros de sintaxe (`message_types.py`, `server.py`) e de instanciação
-  (`Client()` sem host/porta, `get_leader()` retornando tupla em vez de dict).
-- Implementados do zero: `distributed/leader_manager.py` (Bully), `distributed/
-  multicast_manager.py` + `distributed/holdback_queue.py` (multicast ordenado),
-  `network/peer_manager.py` (peers), heartbeat automático em `network/node.py` e os
-  comandos `connect`, `peers`, `lock-resource`, `unlock-resource`, `elect`, `crash`,
-  `revive`.
-- Corrigida uma condição de corrida (`RuntimeError: dictionary changed size during
-  iteration`) ao iterar peers durante uma eleição concorrente com `PEER_JOIN`.

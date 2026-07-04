@@ -112,6 +112,37 @@ class Server(threading.Thread):
 
         ###################################################
 
+        elif message.type == MessageType.RICART_REQUEST.value:
+
+            return node.mutex_manager.handle_ricart_request(message)
+
+        ###################################################
+
+        elif message.type == MessageType.RICART_REPLY.value:
+
+            return node.mutex_manager.handle_ricart_reply(message)
+
+        ###################################################
+
+        elif message.type == MessageType.MAEKAWA_REQUEST.value:
+
+            return node.mutex_manager.handle_maekawa_request(message)
+
+        ###################################################
+
+        elif message.type == MessageType.MAEKAWA_VOTE.value:
+
+            return node.mutex_manager.handle_maekawa_vote(message)
+
+        ###################################################
+
+        elif message.type == MessageType.MAEKAWA_RELEASE.value:
+
+            return node.mutex_manager.handle_maekawa_release(message)
+
+
+        ###################################################
+
         elif message.type == MessageType.ELECTION.value:
 
             return node.leader_manager.handle_election(message)
@@ -124,9 +155,61 @@ class Server(threading.Thread):
 
         ###################################################
 
+        elif message.type == MessageType.RING_ELECTION.value:
+
+            return node.leader_manager.handle_ring_election(message)
+
+        ###################################################
+
+        elif message.type == MessageType.RING_COORDINATOR.value:
+
+            return node.leader_manager.handle_ring_coordinator(message)
+
+
+        ###################################################
+
+        elif message.type == MessageType.TOTAL_SEQUENCER_REQUEST.value:
+
+            return node.multicast_manager.handle_sequencer_request(message)
+
+        ###################################################
+
+        elif message.type == MessageType.CONSENSUS_PROPOSE.value:
+
+            return node.consensus_manager.handle_proposal(message)
+
+        ###################################################
+
+        elif message.type == MessageType.CONSENSUS_DECIDE.value:
+
+            return node.consensus_manager.handle_decision(message)
+
+        ###################################################
+
+
+        elif message.type == MessageType.TX_PREPARE.value:
+
+            return node.transaction_manager.handle_prepare(message)
+
+        ###################################################
+
+        elif message.type == MessageType.TX_GLOBAL_COMMIT.value:
+
+            return node.transaction_manager.handle_global_commit(message)
+
+        ###################################################
+
+        elif message.type == MessageType.TX_GLOBAL_ABORT.value:
+
+            return node.transaction_manager.handle_global_abort(message)
+
+        ###################################################
+
         elif message.type == MessageType.MULTICAST.value:
 
+
             return node.multicast_manager.handle_message(message)
+
 
         ###################################################
 
