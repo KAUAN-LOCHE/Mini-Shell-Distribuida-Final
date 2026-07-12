@@ -128,7 +128,7 @@ class CommandParser:
         else:
             return f"Unknown command: {command_input}"
 
-        return "OK"
+        return ""
 
     # ------------------------------------------------------------------
     # Mutual exclusion

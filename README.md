@@ -1,169 +1,428 @@
-# Shell Distribuída — Guia de Execução e Dicionário de Comandos
+# MiniShell Linux Distribuída
 
-Disciplina: Computação Distribuída e Paralela
-Professor: Ronaldo Oikawa
-Autor: Kauan dos Santos Loche
-
----
-
-## 1. Arquitetura em um parágrafo
-
-Cada instância (`main.py --id X --port Y`) sobe um **nó** completo: um servidor TCP
-(`network/server.py`) escutando em background, uma tabela de peers
-(`network/peer_manager.py`) e três gerentes distribuídos — lock
-(`distributed/lock_manager.py`), eleição/Bully (`distributed/leader_manager.py`) e
-multicast confiável (`distributed/multicast_manager.py`). O usuário interage pela
-`MiniShell` (`shell/prompt.py`), que repassa cada linha digitada ao
-`CommandParser` (`shell/parser.py`).
+> Projeto desenvolvido para a disciplina **Computação Distribuída e Paralela**  
+> **Professor:** Ronaldo Oikawa  
+> **Autor:** Kauan dos Santos Loche
 
 ---
 
-## 2. Como executar
+# Visão Geral
 
-Abra **um terminal por nó** (mínimo 2, recomendado 3):
+A MiniShell Distribuída implementa uma shell Linux simplificada capaz de executar comandos locais e distribuídos entre múltiplos nós conectados via TCP.
+
+Cada instância da aplicação representa um **nó independente**, contendo:
+
+- Servidor TCP
+- Cliente TCP
+- Gerenciador de peers
+- Eleição de líder (Bully)
+- Exclusão mútua distribuída
+- Multicast confiável e ordenado
+- Interpretador de comandos
+
+Os nós cooperam para manter um ambiente distribuído com coordenação automática, replicação de comandos e sincronização de recursos.
+
+---
+
+# Arquitetura
+
+```
+Usuário
+    │
+    ▼
+MiniShell (Prompt)
+    │
+    ▼
+Command Parser
+    │
+    ▼
+Node
+ ├── Server TCP
+ ├── Client TCP
+ ├── Peer Manager
+ ├── Leader Manager (Bully)
+ ├── Lock Manager
+ └── Multicast Manager
+```
+
+Cada nó executa simultaneamente:
+
+- interface interativa (CLI)
+- servidor TCP
+- protocolos distribuídos
+- gerenciamento de peers
+
+---
+
+# Estrutura do Projeto
+
+```
+shell/
+    prompt.py
+    parser.py
+
+network/
+    node.py
+    server.py
+    client.py
+    peer_manager.py
+    message.py
+
+distributed/
+    leader_manager.py
+    lock_manager.py
+    multicast_manager.py
+
+managers/
+    file_manager.py
+    process_manager.py
+
+main.py
+```
+
+---
+
+# Como executar
+
+Abra um terminal para cada nó.
+
+Exemplo com três nós:
 
 ```bash
 python3 main.py --id 1 --port 5001
+
 python3 main.py --id 2 --port 5002
+
 python3 main.py --id 3 --port 5003
 ```
 
-Cada nó nasce como líder de si mesmo. Conecte-os para formar o grupo (isso já dispara
-uma eleição automaticamente):
+Inicialmente cada nó acredita ser líder.
+
+Conecte os nós:
 
 ```
-shell-node1(LIDER)> connect 2 127.0.0.1 5002
-shell-node1(LIDER)> connect 3 127.0.0.1 5003
+connect 2 127.0.0.1 5002
+
+connect 3 127.0.0.1 5003
 ```
 
-Depois de conectados, o prompt do nó de **maior ID** passa a exibir `(LIDER)` — ele é o
-coordenador atual (mutex e eleição partem dele).
+Após a conexão, ocorre automaticamente uma eleição.
 
-Para sair de um nó: `exit`.
+O nó de maior ID torna-se o líder.
+
+O prompt passa a indicar:
+
+```
+shell-node3(LIDER)>
+```
 
 ---
 
-## 3. Dicionário de comandos
+# Protocolos Distribuídos
 
-| Comando | Sintaxe | Tipo | O que faz |
-|---|---|---|---|
-| `connect` | `connect <id> <host> <porta>` | **Distribuído** | Registra um peer, troca `PEER_JOIN` e dispara nova eleição (Bully) |
-| `peers` | `peers` | Local | Lista os peers conhecidos por este nó (não consulta a rede) |
-| `elect` | `elect` | **Distribuído** | Força manualmente uma nova eleição (`ELECTION`/`OK`/`COORDINATOR`) |
-| `lock-resource` | `lock-resource <recurso>` | **Distribuído** | Pede ao líder um lock exclusivo sobre `<recurso>` |
-| `unlock-resource` | `unlock-resource <recurso>` | **Distribuído** | Libera o lock de `<recurso>` junto ao líder |
-| `mkdir` | `mkdir <dir>` | **Distribuído + local** | Pede lock sobre `<dir>`, cria o diretório localmente e libera o lock |
-| `echo` | `echo "texto" > arquivo` | **Distribuído (multicast)** | Escreve o arquivo localmente e propaga via multicast ordenado para todos os peers |
-| `rmdir` | `rmdir <dir>` | Local | Remove diretório vazio (apenas no nó atual) |
-| `rmdir -rf` | `rmdir -rf <dir>` | Local | Remove diretório recursivamente (apenas no nó atual) |
-| `cd` | `cd <dir>` | Local | Muda o diretório de trabalho do processo do nó |
-| `cp` | `cp <origem> <destino>` | Local | Copia arquivo (apenas no nó atual) |
-| `backup-dir` | `backup-dir <dir>` | Local | Faz backup de `<dir>` em `<dir>_backup` usando uma thread separada |
-| `process-test` | `process-test` | Local | Demonstra `os.fork()`/`os.wait()` |
-| `thread-test` | `thread-test` | Local | Demonstra criação/join de thread |
-| `ls ...` | `ls -la` etc. | Local | Executa comando externo via `fork`+`execvp` |
-| `crash` | `crash` | Local (efeito remoto) | Simula queda: nó para de responder a qualquer mensagem de rede |
-| `revive` | `revive` | Local | Tira o nó do estado de "crash", volta a responder |
-| `time` | `time <comando>` | Modificador | Mede o tempo de execução de qualquer comando acima |
-| `exit` | `exit` | Local (shell) | Encerra a MiniShell deste nó |
+## Eleição de Líder
 
-> **Distribuído** = envolve troca de mensagens TCP com outro nó (leader ou peers).
-> **Local** = executado inteiramente no processo do nó atual, sem rede.
+Implementação do algoritmo **Bully (Valentão)**.
+
+Características:
+
+- maior ID vence
+- reeleição automática após novos peers
+- nova eleição quando o líder falha
+
+Mensagens utilizadas:
+
+- ELECTION
+- OK
+- COORDINATOR
+
+Complexidade:
+
+- Melhor caso: O(N)
+- Pior caso: O(N²)
 
 ---
 
-## 4. Como testar cada comando
+## Exclusão Mútua
 
-### 4.1 Comandos locais (testar em um único nó, sem `connect`)
+Existe um coordenador (líder) responsável por controlar os locks.
 
-```
-shell-node1(LIDER)> mkdir teste          # sem peers, lock é concedido automaticamente
-shell-node1(LIDER)> cd teste
-shell-node1(LIDER)> echo "ola" > a.txt   # sem peers, só grava local
-shell-node1(LIDER)> cp a.txt b.txt
-shell-node1(LIDER)> rmdir -rf ../teste
-shell-node1(LIDER)> ls -la
-shell-node1(LIDER)> process-test
-shell-node1(LIDER)> thread-test
-shell-node1(LIDER)> backup-dir /tmp
-shell-node1(LIDER)> time ls -la
-```
+Cada recurso possui apenas um dono por vez.
 
-### 4.2 Exclusão mútua distribuída (precisa de 2+ nós conectados)
+Fluxo:
 
 ```
-# terminal do node3 (líder, maior ID)
-shell-node3(LIDER)> lock-resource dados
+Node
+    │
+LOCK REQUEST
+    │
+    ▼
+Leader
+    │
+Lock livre?
+ ├── Sim → concede
+ └── Não → Resource busy
+```
+
+Utilizado pelos comandos:
+
+- lock-resource
+- unlock-resource
+- mkdir
+
+---
+
+## Multicast Confiável
+
+Comandos de escrita são enviados para todos os peers.
+
+Cada mensagem possui:
+
+- sequência
+- remetente
+
+Mensagens fora de ordem ficam armazenadas em uma Hold-back Queue até poderem ser entregues.
+
+Garantias:
+
+- entrega FIFO
+- nenhuma duplicação
+- mesma ordem para todos os nós
+
+---
+
+# Comandos
+
+| Comando | Descrição |
+|----------|-----------|
+| connect | conecta um novo peer |
+| peers | lista peers conhecidos |
+| elect | força nova eleição |
+| lock-resource | solicita lock distribuído |
+| unlock-resource | libera lock |
+| mkdir | cria diretório usando exclusão mútua |
+| echo | grava arquivo e replica via multicast |
+| rmdir | remove diretório |
+| rmdir -rf | remove recursivamente |
+| cd | muda diretório |
+| cp | copia arquivo |
+| backup-dir | cria backup usando thread |
+| process-test | demonstra fork() |
+| thread-test | demonstra threads |
+| ls | executa comando externo |
+| crash | simula queda do nó |
+| revive | recupera nó |
+| time | mede tempo de execução |
+| exit | encerra a shell |
+
+---
+
+# Testes
+
+## 1. Comandos Locais
+
+```
+mkdir teste
+
+cd teste
+
+echo "ola" > a.txt
+
+cp a.txt b.txt
+
+ls -la
+
+process-test
+
+thread-test
+
+backup-dir /tmp
+
+time ls -la
+```
+
+---
+
+## 2. Exclusão Mútua
+
+No líder:
+
+```
+lock-resource dados
+```
+
+Resultado:
+
+```
 Lock acquired
-
-# terminal do node2
-shell-node2> lock-resource dados
-Resource busy.                          # confirma exclusão mútua
-
-# volta ao node3
-shell-node3(LIDER)> unlock-resource dados
-Lock released
-
-# node2 tenta de novo
-shell-node2> lock-resource dados
-Lock acquired                           # agora consegue
 ```
 
-`mkdir` usa esse mesmo mecanismo internamente — teste criando o mesmo diretório em dois
-nós "ao mesmo tempo" (peça lock manualmente em um deles antes) para ver o segundo
-receber `"Resource busy."`.
-
-### 4.3 Eleição de líder — Algoritmo Valentão (precisa de 2+ nós)
+Em outro nó:
 
 ```
-shell-node1> connect 2 127.0.0.1 5002
+lock-resource dados
 ```
 
-Observe nos logs de ambos os terminais as mensagens `ELECTION` → `OK` → `COORDINATOR`.
-O nó de maior ID deve terminar com `is_leader = True` e prompt `(LIDER)`. Repita com um
-terceiro nó (`connect 3 ...`) e confirme que o nó 3 assume a liderança.
-
-Também é possível forçar manualmente: `elect` em qualquer nó.
-
-### 4.4 Tolerância a falhas (crash do líder)
+Resultado:
 
 ```
-# derruba o líder atual (ex: node3)
-shell-node3(LIDER)> crash
-
-# em outro nó, force a checagem de líder (ou aguarde ~5s de heartbeat automático)
-shell-node2> elect
+Resource busy.
 ```
 
-Verifique com `peers` e observando o prompt que um novo líder foi eleito entre os nós
-ainda vivos. O node3 continua de pé mas não responde a nada (simula queda real).
-Para trazê-lo de volta: no terminal do node3, digite `revive`.
-
-### 4.5 Multicast confiável e ordenado (precisa de 2+ nós)
+Depois:
 
 ```
-shell-node1> echo "conteudo replicado" > arq.txt
+unlock-resource dados
 ```
 
-Verifique que `arq.txt` foi criado **em todos os nós conectados**, com o mesmo
-conteúdo, no diretório de trabalho de cada um. Os logs de cada nó mostram
-`"delivered multicast command -> ..."`, confirmando a entrega ordenada (com número de
-sequência por remetente e hold-back queue para mensagens fora de ordem).
+O segundo nó consegue adquirir o lock.
 
-### 4.6 Comandos remotos via `COMMAND` (opcional, fora do shell interativo)
+---
 
-O protocolo também aceita um `Message(MessageType.COMMAND, ...)` vindo de qualquer
-cliente TCP externo — o servidor repassa para `node.parser.execute(...)` e devolve o
-resultado como `RESPONSE`. Isso é usado internamente pelo `Client.send_to`, mas pode ser
-testado manualmente com um script Python simples usando `network/client.py`:
+## 3. Eleição
+
+```
+connect 2 127.0.0.1 5002
+
+connect 3 127.0.0.1 5003
+```
+
+Ou manualmente:
+
+```
+elect
+```
+
+Observe as mensagens:
+
+```
+ELECTION
+
+OK
+
+COORDINATOR
+```
+
+O maior ID torna-se líder.
+
+---
+
+## 4. Tolerância a Falhas
+
+No líder:
+
+```
+crash
+```
+
+Em outro nó:
+
+```
+elect
+```
+
+Um novo líder será eleito.
+
+Para recuperar:
+
+```
+revive
+```
+
+---
+
+## 5. Multicast
+
+Execute:
+
+```
+echo "conteudo replicado" > arq.txt
+```
+
+Todos os nós conectados receberão:
+
+```
+arq.txt
+```
+
+com exatamente o mesmo conteúdo.
+
+---
+
+# Comunicação
+
+Todas as mensagens trafegam em JSON.
+
+Exemplo:
+
+```json
+{
+  "type": "LOCK_REQUEST",
+  "sender": 2,
+  "payload": {
+    "resource": "dados"
+  }
+}
+```
+
+---
+
+# Execução Remota
+
+Também é possível enviar comandos diretamente pela API TCP.
+
+Exemplo:
 
 ```python
 from network.client import Client
 from network.message import Message
 from distributed.message_types import MessageType
 
-msg = Message(MessageType.COMMAND, sender=99, payload="peers")
-print(Client.send_to("127.0.0.1", 5001, msg).payload)
+msg = Message(
+    MessageType.COMMAND,
+    sender=99,
+    payload="peers"
+)
+
+print(Client.send_to(
+    "127.0.0.1",
+    5001,
+    msg
+).payload)
 ```
 
 ---
+
+# Tecnologias
+
+- Python 3
+- TCP Sockets
+- Threads
+- JSON
+- POSIX (Linux/WSL)
+
+---
+
+# Limitações
+
+- `fork()` e `execvp()` exigem Linux ou WSL.
+- `ls` depende de ambiente POSIX.
+- O algoritmo Bully possui custo O(N²) no pior caso.
+- A replicação depende da conectividade entre os peers.
+
+---
+
+# Resumo
+
+O projeto implementa uma MiniShell distribuída composta por múltiplos nós cooperativos capazes de:
+
+- comunicação TCP;
+- descoberta de peers;
+- eleição automática de líder;
+- exclusão mútua distribuída;
+- multicast confiável;
+- execução de comandos locais e distribuídos;
+- simulação de falhas;
+- recuperação do sistema.
+
+A combinação desses mecanismos demonstra os principais conceitos de Sistemas Distribuídos em uma aplicação prática e modular.
